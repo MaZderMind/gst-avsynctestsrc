@@ -52,8 +52,8 @@ enum
 };
 
 /* property defaults */
-#define PROP_FOREGROUND_COLOR_DEFAULT (0)
-#define PROP_BACKGROUND_COLOR_DEFAULT (0)
+#define PROP_FOREGROUND_COLOR_DEFAULT (0xFFFFFFFF)
+#define PROP_BACKGROUND_COLOR_DEFAULT (0xFF000000)
 
 
 /* parent class */
