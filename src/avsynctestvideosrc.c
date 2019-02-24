@@ -21,7 +21,6 @@
 #include "config.h"
 #endif
 
-//#include <cairo.h>
 #include "avsynctestvideosrc.h"
 
 /* pad templates */
@@ -70,6 +69,9 @@ static void gst_avsynctestvideosrc_finalize (GObject * obj);
 static gboolean gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps);
 static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps);
 static GstFlowReturn gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer);
+
+/* GstAvSyncTestVideoSrc member methods */
+static void gst_avsynctestvideosrc_destory_cairo (GstAvSyncTestVideoSrc * avsynctestvideosrc);
 
 static void
 gst_avsynctestvideosrc_class_init (GstAvSyncTestVideoSrcClass * klass)
@@ -183,8 +185,22 @@ gst_avsynctestvideosrc_finalize (GObject * object)
   GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (object);
   GST_DEBUG_OBJECT (avsynctestvideosrc, "finalize");
 
+  gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+void gst_avsynctestvideosrc_destory_cairo (GstAvSyncTestVideoSrc * avsynctestvideosrc)
+{
+  if (avsynctestvideosrc->cairo != NULL) {
+    GST_DEBUG_OBJECT (avsynctestvideosrc, "destroying cairo context");
+    cairo_destroy(avsynctestvideosrc->cairo);
+  }
+
+  if (avsynctestvideosrc->surface != NULL) {
+    GST_DEBUG_OBJECT (avsynctestvideosrc, "destroying cairo surface");
+    cairo_surface_destroy(avsynctestvideosrc->surface);
+  }
 }
 
 static gboolean
@@ -194,6 +210,16 @@ gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps)
   GST_DEBUG_OBJECT (avsynctestvideosrc, "set_caps caps=%" GST_PTR_FORMAT, caps);
 
   gst_video_info_from_caps (&avsynctestvideosrc->video_info, caps);
+  gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
+
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface xRGB");
+  avsynctestvideosrc->surface = cairo_image_surface_create (
+    CAIRO_FORMAT_RGB24,
+    avsynctestvideosrc->video_info.width,
+    avsynctestvideosrc->video_info.height);
+
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface");
+  avsynctestvideosrc->cairo = cairo_create (avsynctestvideosrc->surface);
 
   return TRUE;
 }

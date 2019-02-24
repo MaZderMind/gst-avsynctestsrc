@@ -61,6 +61,12 @@ PKG_CHECK_MODULES(GST, [
       or similar. The minimum version required is $GST_REQUIRED.
   ])
 ])
+PKG_CHECK_MODULES(CAIRO, [
+  cairo >= 1.2.0
+], [
+  AC_SUBST(CAIRO_CFLAGS)
+  AC_SUBST(CAIRO_LIBS)
+])
 
 dnl check if compiler understands -Wall (if yes, add -Wall to GST_CFLAGS)
 AC_MSG_CHECKING([to see if compiler understands -Wall])

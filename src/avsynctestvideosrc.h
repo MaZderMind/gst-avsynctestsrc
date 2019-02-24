@@ -20,7 +20,8 @@
 #define _GST_AV_SYNC_TEST_VIDEO_SRC_H_
 
 #include <gst/base/gstpushsrc.h>
-  #include <gst/video/video.h>
+#include <gst/video/video.h>
+#include <cairo.h>
 
 G_BEGIN_DECLS
 #define GST_TYPE_AV_SYNC_TEST_VIDEO_SRC           (gst_avsynctestvideosrc_get_type())
@@ -39,6 +40,9 @@ struct _GstAvSyncTestVideoSrc
 
   guint foreground_color;
   guint background_color;
+
+  cairo_surface_t *surface;
+  cairo_t *cairo;
 };
 
 struct _GstAvSyncTestVideoSrcClass

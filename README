@@ -16,7 +16,7 @@ Generates the Audio-Portion of the AV Sync-Test Signal.
 Install Build-Dependencies
 --------------------------
 ```
-apt install -y build-essential autoconf pkg-config libtool gstreamer1.0-tools libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+apt install -y build-essential autoconf pkg-config libtool gstreamer1.0-tools libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libcairo2-dev
 ```
 
 Getting-Started
