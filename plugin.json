@@ -1,0 +1,60 @@
+{
+  "author": "Peter K\u00f6rner",
+  "authorEmail": "peter@mazdermind.de",
+  "description": "Generates an Audio and a Video-Signal that have distinctive features happening at the exact same point in time, useful to detect Problems in the A/V Sync of long running Systems.",
+  "elements": [
+    {
+      "archetype": "GstPushSrc",
+      "classifications": [
+        "Source",
+        "Video",
+        "Debug"
+      ],
+      "description": "Generates the Video-Portion of the AV Sync-Test Signal.",
+      "mediatype": "VIDEO",
+      "name": "AV Sync-Test Video Src",
+      "properties": [
+        {
+          "description": "Foreground Color of the generated Test-Image.",
+          "enumItems": [],
+          "name": "Foreground Color",
+          "type": "UINT"
+        },
+        {
+          "description": "Background Color of the generated Test-Image.",
+          "enumItems": [],
+          "name": "Background-Color",
+          "type": "UINT"
+        }
+      ],
+      "signals": [
+        "sync-point"
+      ]
+    },
+    {
+      "archetype": "GstPushSrc",
+      "classifications": [
+        "Source",
+        "Audio",
+        "Debug"
+      ],
+      "description": "Generates the Audio-Portion of the AV Sync-Test Signal.",
+      "mediatype": "AUDIO",
+      "name": "AV Sync-Test Audio Src",
+      "properties": [
+        {
+          "description": "Frequency of test signal.",
+          "enumItems": [],
+          "name": "Freq",
+          "type": "DOUBLE"
+        }
+      ],
+      "signals": [
+        "sync-point"
+      ]
+    }
+  ],
+  "license": "LGPL",
+  "name": "AV Sync-Test Src",
+  "url": "https://github.com/MaZderMind/gst-avsynctestsrc"
+}
