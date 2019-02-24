@@ -24,7 +24,6 @@ Getting-Started
 ```
 cd avsynctestsrc
 git init
-git submodules init
 ./autogen.sh
 
 cd examples
