@@ -27,11 +27,15 @@
 static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS("video/x-raw,format=xRGB,interlace-mode=progressive,multiview-mide=mono,pixel-aspect-ratio=1/1")
+    GST_STATIC_CAPS("video/x-raw,format=BGRx,interlace-mode=progressive,multiview-mide=mono,pixel-aspect-ratio=1/1")
 );
 
 GST_DEBUG_CATEGORY_STATIC (gst_avsynctestvideosrc_debug);
 #define GST_CAT_DEFAULT gst_avsynctestvideosrc_debug
+
+#define COLOR_R(x) ((double)((x & 0x00FF0000) >> 16) / 0xFF)
+#define COLOR_G(x) ((double)((x & 0x0000FF00) >>  8) / 0xFF)
+#define COLOR_B(x) ((double)((x & 0x000000FF) >>  0) / 0xFF)
 
 /* signals */
 enum
@@ -72,6 +76,7 @@ static GstFlowReturn gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *
 
 /* GstAvSyncTestVideoSrc member methods */
 static void gst_avsynctestvideosrc_destory_cairo (GstAvSyncTestVideoSrc * avsynctestvideosrc);
+static void gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideosrc);
 
 static void
 gst_avsynctestvideosrc_class_init (GstAvSyncTestVideoSrcClass * klass)
@@ -85,14 +90,14 @@ gst_avsynctestvideosrc_class_init (GstAvSyncTestVideoSrcClass * klass)
 
   g_object_class_install_property (gobject_class, PROP_FOREGROUND_COLOR,
       g_param_spec_uint ("foreground-color", "Foreground Color",
-          "Foreground Color of the generated Test-Image.",
+          "Foreground Color of the generated Test-Image. (big-endian ARGB)",
           0, G_MAXUINT,
           PROP_FOREGROUND_COLOR_DEFAULT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_CONTROLLABLE));
 
   g_object_class_install_property (gobject_class, PROP_BACKGROUND_COLOR,
       g_param_spec_uint ("background-color", "Background-Color",
-          "Background Color of the generated Test-Image.",
+          "Background Color of the generated Test-Image. (big-endian ARGB)",
           0, G_MAXUINT,
           PROP_BACKGROUND_COLOR_DEFAULT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_CONTROLLABLE));
@@ -190,7 +195,8 @@ gst_avsynctestvideosrc_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-void gst_avsynctestvideosrc_destory_cairo (GstAvSyncTestVideoSrc * avsynctestvideosrc)
+void
+gst_avsynctestvideosrc_destory_cairo (GstAvSyncTestVideoSrc * avsynctestvideosrc)
 {
   if (avsynctestvideosrc->cairo != NULL) {
     GST_DEBUG_OBJECT (avsynctestvideosrc, "destroying cairo context");
@@ -221,6 +227,8 @@ gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps)
   GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface");
   avsynctestvideosrc->cairo = cairo_create (avsynctestvideosrc->surface);
 
+  gst_avsynctestvideosrc_paint_background(avsynctestvideosrc);
+
   return TRUE;
 }
 
@@ -242,6 +250,40 @@ static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps
   return caps;
 }
 
+void
+gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideosrc)
+{
+  cairo_t *cr = avsynctestvideosrc->cairo;
+  int width = cairo_image_surface_get_width (avsynctestvideosrc->surface);
+  int height = cairo_image_surface_get_height (avsynctestvideosrc->surface);
+
+  cairo_rectangle (cr, 0, 0, width, height);
+  cairo_set_source_rgb (cr,
+    COLOR_R(avsynctestvideosrc->background_color),
+    COLOR_G(avsynctestvideosrc->background_color),
+    COLOR_B(avsynctestvideosrc->background_color));
+  cairo_fill (cr);
+
+  cairo_set_source_rgb (cr,
+    COLOR_R(avsynctestvideosrc->foreground_color),
+    COLOR_G(avsynctestvideosrc->foreground_color),
+    COLOR_B(avsynctestvideosrc->foreground_color));
+
+  cairo_move_to (cr, 10, 10);
+  cairo_line_to (cr, 20, 10);
+  cairo_line_to (cr, 20, 20);
+  cairo_line_to (cr, 10, 20);
+  cairo_line_to (cr, 10, 10);
+  cairo_stroke (cr);
+
+  cairo_move_to (cr, width - 10, height - 10);
+  cairo_line_to (cr, width - 20, height - 10);
+  cairo_line_to (cr, width - 20, height - 20);
+  cairo_line_to (cr, width - 10, height - 20);
+  cairo_line_to (cr, width - 10, height - 10);
+  cairo_stroke (cr);
+}
+
 static GstFlowReturn
 gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
 {
@@ -251,21 +293,40 @@ gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
   GstVideoFrame frame;
   gst_video_frame_map (&frame, &avsynctestvideosrc->video_info, buffer, GST_MAP_WRITE);
 
+  cairo_surface_t * surface = avsynctestvideosrc->surface;
+  cairo_surface_flush(surface);
+  unsigned char * cairo_pixels = cairo_image_surface_get_data(surface);
+  int cairo_width = cairo_image_surface_get_width (surface);
+  int cairo_height = cairo_image_surface_get_height (surface);
+  int cairo_stride = cairo_image_surface_get_stride (surface);
+
   // fill &frame with video-data here (example given for RGBx, you probably need to check the caps before)
-  guint8 *pixels = GST_VIDEO_FRAME_PLANE_DATA (&frame, 0);
-  guint stride = GST_VIDEO_FRAME_PLANE_STRIDE (&frame, 0);
-  guint pixel_stride = GST_VIDEO_FRAME_COMP_PSTRIDE (&frame, 0);
+  unsigned char * gst_pixels = GST_VIDEO_FRAME_PLANE_DATA (&frame, 0);
+  gint gst_width = GST_VIDEO_FRAME_WIDTH (&frame);
+  gint gst_height = GST_VIDEO_FRAME_HEIGHT (&frame);
+  gint gst_stride = GST_VIDEO_FRAME_COMP_STRIDE (&frame, 0);
 
-  for (guint h = 0; h < avsynctestvideosrc->video_info.height; ++h) {
-    for (guint w = 0; w < avsynctestvideosrc->video_info.width; ++w) {
-      guint8 *pixel = pixels + h * stride + w * pixel_stride;
-
-      *(pixel+0) = 0; // x
-      *(pixel+1) = 255; // R
-      *(pixel+2) = 128; // G
-      *(pixel+3) = 0;   // B
-    }
+  if (G_UNLIKELY (cairo_width != gst_width)) {
+    GST_ERROR_OBJECT(avsynctestvideosrc, "cairo width %d != gst width %d", cairo_width, gst_width);
+    gst_video_frame_unmap (&frame);
+    return GST_FLOW_ERROR;
   }
+
+  if (G_UNLIKELY (cairo_height != gst_height)) {
+    GST_ERROR_OBJECT(avsynctestvideosrc, "cairo height %d != gst height %d", cairo_height, gst_height);
+    gst_video_frame_unmap (&frame);
+    return GST_FLOW_ERROR;
+  }
+
+  if (G_UNLIKELY (cairo_stride != gst_stride)) {
+    GST_ERROR_OBJECT(avsynctestvideosrc, "cairo stride %d != gst stride %d", cairo_stride, gst_stride);
+    gst_video_frame_unmap (&frame);
+    return GST_FLOW_ERROR;
+  }
+
+  gint64 num_bytes = gst_height * gst_stride;
+  //GST_DEBUG_OBJECT (avsynctestvideosrc, "memcpy %" G_GINT64_FORMAT " bytes from cairo to gst-buffer", num_bytes);
+  memcpy(gst_pixels, cairo_pixels, num_bytes);
 
   gst_video_frame_unmap (&frame);
 
