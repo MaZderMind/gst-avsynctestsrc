@@ -21,13 +21,14 @@
 #include "config.h"
 #endif
 
+//#include <cairo.h>
 #include "avsynctestvideosrc.h"
 
 /* pad templates */
 static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS("video/x-raw,format=RGBx")
+    GST_STATIC_CAPS("video/x-raw,format=xRGB,interlace-mode=progressive,multiview-mide=mono,pixel-aspect-ratio=1/1")
 );
 
 GST_DEBUG_CATEGORY_STATIC (gst_avsynctestvideosrc_debug);
@@ -67,6 +68,7 @@ static void gst_avsynctestvideosrc_finalize (GObject * obj);
 
 /* GstPushSrc member methods */
 static gboolean gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps);
+static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps);
 static GstFlowReturn gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer);
 
 static void
@@ -109,6 +111,7 @@ gst_avsynctestvideosrc_class_init (GstAvSyncTestVideoSrcClass * klass)
 
   GstBaseSrcClass *base_src_class = GST_BASE_SRC_CLASS (klass);
   base_src_class->set_caps = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_set_caps);
+  base_src_class->fixate = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_fixate);
 
   GstPushSrcClass *src_class = GST_PUSH_SRC_CLASS (klass);
   src_class->fill = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_fill);
@@ -181,7 +184,7 @@ gst_avsynctestvideosrc_finalize (GObject * object)
   GST_DEBUG_OBJECT (avsynctestvideosrc, "finalize");
 
 
-  G_OBJECT_CLASS (gst_avsynctestvideosrc_parent_class)->finalize (object);
+  G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static gboolean
@@ -195,11 +198,29 @@ gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps)
   return TRUE;
 }
 
+static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps)
+{
+  GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (base);
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "fixate in=%" GST_PTR_FORMAT, caps);
+
+  caps = gst_caps_make_writable (caps);
+  GstStructure *structure = gst_caps_get_structure (caps, 0);
+
+  gst_structure_fixate_field_nearest_int (structure, "width", 320);
+  gst_structure_fixate_field_nearest_int (structure, "height", 240);
+  gst_structure_fixate_field_nearest_fraction (structure, "framerate", 30, 1);
+
+  caps = GST_BASE_SRC_CLASS (parent_class)->fixate (base, caps);
+
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "fixate out=%" GST_PTR_FORMAT, caps);
+  return caps;
+}
+
 static GstFlowReturn
 gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
 {
   GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (base);
-  GST_DEBUG_OBJECT (avsynctestvideosrc, "fill");
+  //GST_DEBUG_OBJECT (avsynctestvideosrc, "fill");
 
   GstVideoFrame frame;
   gst_video_frame_map (&frame, &avsynctestvideosrc->video_info, buffer, GST_MAP_WRITE);
@@ -213,9 +234,10 @@ gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
     for (guint w = 0; w < avsynctestvideosrc->video_info.width; ++w) {
       guint8 *pixel = pixels + h * stride + w * pixel_stride;
 
-      *(pixel+0) = 255; // R
-      *(pixel+1) = 0;   // G
-      *(pixel+2) = 0;   // B
+      *(pixel+0) = 0; // x
+      *(pixel+1) = 255; // R
+      *(pixel+2) = 128; // G
+      *(pixel+3) = 0;   // B
     }
   }
 
