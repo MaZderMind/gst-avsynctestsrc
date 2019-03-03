@@ -69,9 +69,12 @@ static void gst_avsynctestvideosrc_set_property (GObject * object, guint prop_id
 static void gst_avsynctestvideosrc_get_property (GObject * object, guint prop_id, GValue * value, GParamSpec * pspec);
 static void gst_avsynctestvideosrc_finalize (GObject * obj);
 
-/* GstPushSrc member methods */
+/* GstBaseSrc member methods */
 static gboolean gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps);
 static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps);
+static void gst_avsynctestvideosrc_get_times (GstBaseSrc * base, GstBuffer * buffer, GstClockTime * start, GstClockTime * end);
+
+/* GstPushSrc member methods */
 static GstFlowReturn gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer);
 
 /* GstAvSyncTestVideoSrc member methods */
@@ -119,6 +122,7 @@ gst_avsynctestvideosrc_class_init (GstAvSyncTestVideoSrcClass * klass)
   GstBaseSrcClass *base_src_class = GST_BASE_SRC_CLASS (klass);
   base_src_class->set_caps = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_set_caps);
   base_src_class->fixate = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_fixate);
+  base_src_class->get_times = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_get_times);
 
   GstPushSrcClass *src_class = GST_PUSH_SRC_CLASS (klass);
   src_class->fill = GST_DEBUG_FUNCPTR (gst_avsynctestvideosrc_fill);
@@ -138,8 +142,10 @@ gst_avsynctestvideosrc_init (GstAvSyncTestVideoSrc * avsynctestvideosrc)
 {
   GST_DEBUG_OBJECT (avsynctestvideosrc, "init");
 
-    avsynctestvideosrc->foreground_color = PROP_FOREGROUND_COLOR_DEFAULT;
-    avsynctestvideosrc->background_color = PROP_BACKGROUND_COLOR_DEFAULT;
+  avsynctestvideosrc->foreground_color = PROP_FOREGROUND_COLOR_DEFAULT;
+  avsynctestvideosrc->background_color = PROP_BACKGROUND_COLOR_DEFAULT;
+
+  gst_base_src_set_live(GST_BASE_SRC(avsynctestvideosrc), TRUE);
 }
 
 void
@@ -190,7 +196,7 @@ gst_avsynctestvideosrc_finalize (GObject * object)
   GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (object);
   GST_DEBUG_OBJECT (avsynctestvideosrc, "finalize");
 
-  gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
+  //gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -251,6 +257,27 @@ static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps
 }
 
 void
+gst_avsynctestvideosrc_get_times (GstBaseSrc * base, GstBuffer * buffer, GstClockTime * start, GstClockTime * end)
+{
+  GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (base);
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "get_times pts=%" GST_TIME_FORMAT " duration=%" GST_TIME_FORMAT,
+    GST_TIME_ARGS(GST_BUFFER_PTS (buffer)),
+    GST_TIME_ARGS(GST_BUFFER_DURATION (buffer)));
+
+  GstClockTime timestamp = GST_BUFFER_PTS (buffer);
+
+  if (GST_CLOCK_TIME_IS_VALID (timestamp)) {
+    /* get duration to calculate end time */
+    GstClockTime duration = GST_BUFFER_DURATION (buffer);
+
+    if (GST_CLOCK_TIME_IS_VALID (duration)) {
+      *end = timestamp + duration;
+    }
+    *start = timestamp;
+  }
+}
+
+void
 gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideosrc)
 {
   cairo_t *cr = avsynctestvideosrc->cairo;
@@ -287,13 +314,30 @@ gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideo
 static GstFlowReturn
 gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
 {
-  GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (base);
-  //GST_DEBUG_OBJECT (avsynctestvideosrc, "fill");
+  GstAvSyncTestVideoSrc *src = GST_AV_SYNC_TEST_VIDEO_SRC (base);
+
+  /* 0 framerate and we are at the second frame, eos */
+  if (G_UNLIKELY (src->video_info.fps_n == 0 && src->n_frames == 1)) {
+    goto eos;
+  }
+
+  GST_BUFFER_PTS (buffer) = gst_util_uint64_scale (
+    src->n_frames,
+    src->video_info.fps_d * GST_SECOND,
+    src->video_info.fps_n);
+
+  GST_BUFFER_DTS (buffer) = GST_CLOCK_TIME_NONE;
+  GST_BUFFER_DURATION (buffer) = gst_util_uint64_scale (
+    GST_SECOND,
+    src->video_info.fps_d,
+    src->video_info.fps_n);
+
+  src->n_frames++;
 
   GstVideoFrame frame;
-  gst_video_frame_map (&frame, &avsynctestvideosrc->video_info, buffer, GST_MAP_WRITE);
+  gst_video_frame_map (&frame, &src->video_info, buffer, GST_MAP_WRITE);
 
-  cairo_surface_t * surface = avsynctestvideosrc->surface;
+  cairo_surface_t * surface = src->surface;
   cairo_surface_flush(surface);
   unsigned char * cairo_pixels = cairo_image_surface_get_data(surface);
   int cairo_width = cairo_image_surface_get_width (surface);
@@ -307,28 +351,35 @@ gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
   gint gst_stride = GST_VIDEO_FRAME_COMP_STRIDE (&frame, 0);
 
   if (G_UNLIKELY (cairo_width != gst_width)) {
-    GST_ERROR_OBJECT(avsynctestvideosrc, "cairo width %d != gst width %d", cairo_width, gst_width);
-    gst_video_frame_unmap (&frame);
-    return GST_FLOW_ERROR;
+    GST_ERROR_OBJECT(src, "cairo width %d != gst width %d", cairo_width, gst_width);
+    goto incompatible_formats;
   }
 
   if (G_UNLIKELY (cairo_height != gst_height)) {
-    GST_ERROR_OBJECT(avsynctestvideosrc, "cairo height %d != gst height %d", cairo_height, gst_height);
-    gst_video_frame_unmap (&frame);
-    return GST_FLOW_ERROR;
+    GST_ERROR_OBJECT(src, "cairo height %d != gst height %d", cairo_height, gst_height);
+    goto incompatible_formats;
   }
 
   if (G_UNLIKELY (cairo_stride != gst_stride)) {
-    GST_ERROR_OBJECT(avsynctestvideosrc, "cairo stride %d != gst stride %d", cairo_stride, gst_stride);
-    gst_video_frame_unmap (&frame);
-    return GST_FLOW_ERROR;
+    GST_ERROR_OBJECT(src, "cairo stride %d != gst stride %d", cairo_stride, gst_stride);
+    goto incompatible_formats;
   }
 
   gint64 num_bytes = gst_height * gst_stride;
-  //GST_DEBUG_OBJECT (avsynctestvideosrc, "memcpy %" G_GINT64_FORMAT " bytes from cairo to gst-buffer", num_bytes);
+  //GST_DEBUG_OBJECT (src, "memcpy %" G_GINT64_FORMAT " bytes from cairo to gst-buffer", num_bytes);
   memcpy(gst_pixels, cairo_pixels, num_bytes);
 
   gst_video_frame_unmap (&frame);
 
   return GST_FLOW_OK;
+
+incompatible_formats:
+  gst_video_frame_unmap (&frame);
+  return GST_FLOW_ERROR;
+
+eos:
+  {
+    GST_DEBUG_OBJECT (src, "eos: 0 framerate, frame %d", (gint) src->n_frames);
+    return GST_FLOW_EOS;
+  }
 }

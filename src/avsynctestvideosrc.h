@@ -42,6 +42,8 @@ struct _GstAvSyncTestVideoSrc
   guint foreground_color;
   guint background_color;
 
+  gint64 n_frames;
+
   cairo_surface_t *surface;
   cairo_t *cairo;
 };
