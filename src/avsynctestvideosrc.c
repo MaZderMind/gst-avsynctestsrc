@@ -55,6 +55,18 @@ enum
   PROP_BACKGROUND_COLOR,
 };
 
+/* basic geom types */
+typedef struct rectangle
+{
+  double top;
+  double left;
+  double width;
+  double height;
+} double_rectangle_t;
+
+/* geometry of test-card */
+static const double_rectangle_t flash_rectangle = {0.166, 0.070, 0.437, 0.283};
+
 /* property defaults */
 #define PROP_FOREGROUND_COLOR_DEFAULT (0xFFFFFFFF)
 #define PROP_BACKGROUND_COLOR_DEFAULT (0xFF000000)
@@ -281,9 +293,10 @@ void
 gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideosrc)
 {
   cairo_t *cr = avsynctestvideosrc->cairo;
-  int width = cairo_image_surface_get_width (avsynctestvideosrc->surface);
-  int height = cairo_image_surface_get_height (avsynctestvideosrc->surface);
+  double width = cairo_image_surface_get_width (avsynctestvideosrc->surface);
+  double height = cairo_image_surface_get_height (avsynctestvideosrc->surface);
 
+  // fill background with background_color
   cairo_rectangle (cr, 0, 0, width, height);
   cairo_set_source_rgb (cr,
     COLOR_R(avsynctestvideosrc->background_color),
@@ -291,24 +304,28 @@ gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideo
     COLOR_B(avsynctestvideosrc->background_color));
   cairo_fill (cr);
 
+  // continue painting in foreground_color
   cairo_set_source_rgb (cr,
     COLOR_R(avsynctestvideosrc->foreground_color),
     COLOR_G(avsynctestvideosrc->foreground_color),
     COLOR_B(avsynctestvideosrc->foreground_color));
 
-  cairo_move_to (cr, 10, 10);
-  cairo_line_to (cr, 20, 10);
-  cairo_line_to (cr, 20, 20);
-  cairo_line_to (cr, 10, 20);
-  cairo_line_to (cr, 10, 10);
-  cairo_stroke (cr);
+  // draw flash-rectangle outline
+  {
+    double_rectangle_t r = {
+      flash_rectangle.left   * width,
+      flash_rectangle.top    * height,
+      flash_rectangle.width  * width,
+      flash_rectangle.height * height
+    };
 
-  cairo_move_to (cr, width - 10, height - 10);
-  cairo_line_to (cr, width - 20, height - 10);
-  cairo_line_to (cr, width - 20, height - 20);
-  cairo_line_to (cr, width - 10, height - 20);
-  cairo_line_to (cr, width - 10, height - 10);
-  cairo_stroke (cr);
+    cairo_move_to (cr, r.left, r.top);
+    cairo_line_to (cr, r.left + r.width, r.top);
+    cairo_line_to (cr, r.left + r.width, r.top + r.height);
+    cairo_line_to (cr, r.left, r.top + r.height);
+    cairo_line_to (cr, r.left, r.top);
+    cairo_stroke (cr);
+  }
 }
 
 static GstFlowReturn
