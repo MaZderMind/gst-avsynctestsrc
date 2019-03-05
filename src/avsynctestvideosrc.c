@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include <math.h>
 #include "avsynctestvideosrc.h"
 
 /* pad templates */
@@ -58,14 +59,16 @@ enum
 /* basic geom types */
 typedef struct rectangle
 {
-  double top;
   double left;
+  double top;
   double width;
   double height;
 } double_rectangle_t;
 
 /* geometry of test-card */
-static const double_rectangle_t flash_rectangle = {0.166, 0.070, 0.437, 0.283};
+static const double_rectangle_t flash_rectangle    = {.left=0.07, .top=0.1, .width=0.4,  .height=0.3};
+static const double_rectangle_t amboss_rectangle   = {.left=0.75, .top=0.1, .width=0.05, .height=0.4};
+static const double_rectangle_t timeline_rectangle = {.left=0.04,  .top=0.75, .width=0.9, .height=0.1};
 
 /* property defaults */
 #define PROP_FOREGROUND_COLOR_DEFAULT (0xFFFFFFFF)
@@ -208,9 +211,22 @@ gst_avsynctestvideosrc_finalize (GObject * object)
   GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (object);
   GST_DEBUG_OBJECT (avsynctestvideosrc, "finalize");
 
-  //gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
+  gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+void
+gst_avsynctestvideosrc_create_cairo (GstAvSyncTestVideoSrc * avsynctestvideosrc)
+{
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface xRGB");
+  avsynctestvideosrc->surface = cairo_image_surface_create (
+    CAIRO_FORMAT_RGB24,
+    avsynctestvideosrc->video_info.width,
+    avsynctestvideosrc->video_info.height);
+
+  GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface");
+  avsynctestvideosrc->cairo = cairo_create (avsynctestvideosrc->surface);
 }
 
 void
@@ -235,19 +251,10 @@ gst_avsynctestvideosrc_set_caps (GstBaseSrc * base, GstCaps * caps)
 
   gst_video_info_from_caps (&avsynctestvideosrc->video_info, caps);
   gst_avsynctestvideosrc_destory_cairo(avsynctestvideosrc);
-
-  GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface xRGB");
-  avsynctestvideosrc->surface = cairo_image_surface_create (
-    CAIRO_FORMAT_RGB24,
-    avsynctestvideosrc->video_info.width,
-    avsynctestvideosrc->video_info.height);
-
-  GST_DEBUG_OBJECT (avsynctestvideosrc, "creating cairo surface");
-  avsynctestvideosrc->cairo = cairo_create (avsynctestvideosrc->surface);
-
+  gst_avsynctestvideosrc_create_cairo(avsynctestvideosrc);
   gst_avsynctestvideosrc_paint_background(avsynctestvideosrc);
 
-  return TRUE;
+ return TRUE;
 }
 
 static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps)
@@ -268,7 +275,7 @@ static GstCaps *gst_avsynctestvideosrc_fixate (GstBaseSrc * base, GstCaps * caps
   return caps;
 }
 
-void
+static void
 gst_avsynctestvideosrc_get_times (GstBaseSrc * base, GstBuffer * buffer, GstClockTime * start, GstClockTime * end)
 {
   GstAvSyncTestVideoSrc *avsynctestvideosrc = GST_AV_SYNC_TEST_VIDEO_SRC (base);
@@ -289,35 +296,41 @@ gst_avsynctestvideosrc_get_times (GstBaseSrc * base, GstBuffer * buffer, GstCloc
   }
 }
 
-void
-gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideosrc)
+static double_rectangle_t
+gst_avsynctestvideosrc_scale_rectangle(double_rectangle_t rectangle, double width, double height)
 {
-  cairo_t *cr = avsynctestvideosrc->cairo;
-  double width = cairo_image_surface_get_width (avsynctestvideosrc->surface);
-  double height = cairo_image_surface_get_height (avsynctestvideosrc->surface);
+  return (double_rectangle_t) {
+    .left   = rectangle.left   * width,
+    .top    = rectangle.top    * height,
+    .width  = rectangle.width  * width,
+    .height = rectangle.height * height
+  };
+}
+
+static void
+gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * src)
+{
+  cairo_t *cr = src->cairo;
+  double width = cairo_image_surface_get_width (src->surface);
+  double height = cairo_image_surface_get_height (src->surface);
 
   // fill background with background_color
   cairo_rectangle (cr, 0, 0, width, height);
   cairo_set_source_rgb (cr,
-    COLOR_R(avsynctestvideosrc->background_color),
-    COLOR_G(avsynctestvideosrc->background_color),
-    COLOR_B(avsynctestvideosrc->background_color));
+    COLOR_R(src->background_color),
+    COLOR_G(src->background_color),
+    COLOR_B(src->background_color));
   cairo_fill (cr);
 
   // continue painting in foreground_color
   cairo_set_source_rgb (cr,
-    COLOR_R(avsynctestvideosrc->foreground_color),
-    COLOR_G(avsynctestvideosrc->foreground_color),
-    COLOR_B(avsynctestvideosrc->foreground_color));
+    COLOR_R(src->foreground_color),
+    COLOR_G(src->foreground_color),
+    COLOR_B(src->foreground_color));
 
   // draw flash-rectangle outline
   {
-    double_rectangle_t r = {
-      flash_rectangle.left   * width,
-      flash_rectangle.top    * height,
-      flash_rectangle.width  * width,
-      flash_rectangle.height * height
-    };
+    double_rectangle_t r = gst_avsynctestvideosrc_scale_rectangle(flash_rectangle, width, height);
 
     cairo_move_to (cr, r.left, r.top);
     cairo_line_to (cr, r.left + r.width, r.top);
@@ -325,6 +338,104 @@ gst_avsynctestvideosrc_paint_background (GstAvSyncTestVideoSrc * avsynctestvideo
     cairo_line_to (cr, r.left, r.top + r.height);
     cairo_line_to (cr, r.left, r.top);
     cairo_stroke (cr);
+  }
+
+  // draw amboss top and bottom line
+  {
+    double_rectangle_t r = gst_avsynctestvideosrc_scale_rectangle(amboss_rectangle, width, height);
+
+    cairo_move_to (cr, r.left, r.top);
+    cairo_line_to (cr, r.left + r.width, r.top);
+    cairo_stroke (cr);
+
+    cairo_move_to (cr, r.left, r.top + r.height);
+    cairo_line_to (cr, r.left + r.width, r.top + r.height);
+    cairo_stroke (cr);
+  }
+
+  // draw timeline
+  {
+    double_rectangle_t r = gst_avsynctestvideosrc_scale_rectangle(timeline_rectangle, width, height);
+
+    // horizontal line
+    {
+      cairo_move_to (cr, r.left, (r.top + r.height / 2));
+      cairo_line_to (cr, r.left + r.width, (r.top + r.height / 2));
+      cairo_stroke (cr);
+    }
+
+    // time steps
+    {
+      gint n_frames = src->video_info.fps_n;
+      gint center_frame = n_frames / 2;
+      GST_DEBUG_OBJECT(src, "n_frames=%d, n_frames=%d", n_frames, n_frames);
+
+      double distance = (double)1 / (n_frames - 1) * r.width;
+      char n_text[5];
+
+      // lines
+      for(gint n = 0; n < n_frames; n++)
+      {
+        double x = distance * n;
+
+        cairo_move_to (cr, r.left + x, r.top);
+        cairo_line_to (cr, r.left + x, r.top + r.height);
+        cairo_stroke (cr);
+      }
+
+      // labels
+      cairo_set_font_size(cr, height/30);
+      cairo_text_extents_t extents;
+
+      cairo_font_extents_t font_extents;
+      cairo_font_extents (cr, &font_extents);
+
+      // estimate max widh of label, select n'th label to draw
+      g_snprintf(n_text, 5, "%d", n_frames);
+      cairo_text_extents (cr, n_text, &extents);
+      gint nth_label = ceil(extents.width / distance);
+      GST_DEBUG_OBJECT(src,
+        "estimated max. label-width to %f, drawing lines every %f pixels, thus displaying every %d'th label",
+        extents.width, distance, nth_label);
+
+      for(gint n = 0; n < n_frames; n++)
+      {
+        double x = distance * n;
+
+        gint n_frame = abs(n - center_frame);
+        g_snprintf(n_text, 5, "%d", n_frame);
+        cairo_text_extents (cr, n_text, &extents);
+
+        if(n % nth_label == 0)
+        {
+          cairo_move_to (cr, r.left + x - extents.width/2, r.top + r.height + font_extents.ascent);
+          cairo_show_text(cr, n_text);
+        }
+      }
+    }
+  }
+}
+
+static void
+gst_avsynctestvideosrc_draw_frame(GstAvSyncTestVideoSrc *src)
+{
+  cairo_t *cr = src->cairo;
+  double width = cairo_image_surface_get_width (src->surface);
+  double height = cairo_image_surface_get_height (src->surface);
+
+  gint n_frames = src->video_info.fps_n;
+
+  // draw flash area
+  if((src->n_frames % n_frames) == 0)
+  {
+    double_rectangle_t r = gst_avsynctestvideosrc_scale_rectangle(flash_rectangle, width, height);
+
+    cairo_move_to (cr, r.left, r.top);
+    cairo_line_to (cr, r.left + r.width, r.top);
+    cairo_line_to (cr, r.left + r.width, r.top + r.height);
+    cairo_line_to (cr, r.left, r.top + r.height);
+    cairo_line_to (cr, r.left, r.top);
+    cairo_fill (cr);
   }
 }
 
@@ -349,6 +460,9 @@ gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
     src->video_info.fps_d,
     src->video_info.fps_n);
 
+  //cairo_push_group (src->cairo);
+  gst_avsynctestvideosrc_draw_frame(src);
+
   src->n_frames++;
 
   GstVideoFrame frame;
@@ -361,7 +475,8 @@ gst_avsynctestvideosrc_fill (GstPushSrc * base, GstBuffer *buffer)
   int cairo_height = cairo_image_surface_get_height (surface);
   int cairo_stride = cairo_image_surface_get_stride (surface);
 
-  // fill &frame with video-data here (example given for RGBx, you probably need to check the caps before)
+  //cairo_pop_group (src->cairo);
+
   unsigned char * gst_pixels = GST_VIDEO_FRAME_PLANE_DATA (&frame, 0);
   gint gst_width = GST_VIDEO_FRAME_WIDTH (&frame);
   gint gst_height = GST_VIDEO_FRAME_HEIGHT (&frame);
